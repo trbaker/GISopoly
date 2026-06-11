@@ -7,7 +7,7 @@ The initial prompt:: create an html web app that is a monopoly style game. put u
 <br>
 A second prompt: "can you add AI opponents?"
 <br><br>
-<b>build time:,/B> I "built" this while eating braekfast.
+<b>build time:</B> I "built" this while eating braekfast.
 <hr>
 GISopoly — The Esri Edition, a fully playable Monopoly-style game in a single HTML file (2–4 players, hot-seat).
 <br><br>
