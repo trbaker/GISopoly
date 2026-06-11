@@ -1,4 +1,4 @@
-##GISopoly
+##GISopoly<br>
 Link to game: https://trbaker.github.io/GISopoly/
 
 <br><br>
