@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GISopoly — The Esri Edition</title>
+<style>
+  :root{
+    --ink:#10304a;            /* deep basemap navy */
+    --ink-soft:#3d5a73;
+    --paper:#eaf0e4;          /* pale terrain green */
+    --paper-deep:#dde7d4;
+    --contour:#c6d4bb;
+    --esri-blue:#0079c1;
+    --esri-blue-dark:#005e95;
+    --accent-warm:#e8862e;
+    --card:#ffffff;
+    --g-brown:#8d6e4a; --g-lblue:#74c2e1; --g-pink:#d05a8c; --g-orange:#e8862e;
+    --g-red:#d23b34; --g-yellow:#e8c33c; --g-green:#3e8e5a; --g-dblue:#15538c;
+    --rail:#33424f; --util:#7a8d63;
+    --p0:#0079c1; --p1:#d23b34; --p2:#3e8e5a; --p3:#9356b0;
+    --radius:10px;
+    --shadow:0 6px 24px rgba(16,48,74,.18);
+    font-size:16px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:"Avenir Next","Segoe UI",system-ui,sans-serif;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(0,121,193,.10), transparent 60%),
+      repeating-linear-gradient(0deg, transparent 0 39px, rgba(16,48,74,.045) 39px 40px),
+      repeating-linear-gradient(90deg, transparent 0 39px, rgba(16,48,74,.045) 39px 40px),
+      #f2f5ee;
+    color:var(--ink);
+    min-height:100%;
+  }
+  button{font:inherit; cursor:pointer;}
+
+  /* ---------- layout ---------- */
+  .app{
+    display:flex; gap:18px; align-items:flex-start; justify-content:center;
+    padding:18px; max-width:1280px; margin:0 auto;
+  }
+  .board-wrap{flex:0 1 auto;}
+  .side{flex:1 1 300px; max-width:360px; min-width:280px; display:flex; flex-direction:column; gap:12px;}
+  @media (max-width:980px){
+    .app{flex-direction:column; align-items:center;}
+    .side{max-width:min(92vmin,760px); width:100%;}
+  }
+
+  /* ---------- board ---------- */
+  .board{
+    width:min(92vmin,760px); aspect-ratio:1/1;
+    display:grid; grid-template-columns:repeat(11,1fr); grid-template-rows:repeat(11,1fr);
+    background:var(--paper);
+    border:3px solid var(--ink);
+    border-radius:14px;
+    box-shadow:var(--shadow);
+    container-type:size;
+    overflow:hidden;
+    position:relative;
+  }
+  .cell{
+    border:1px solid rgba(16,48,74,.35);
+    background:var(--paper);
+    position:relative;
+    display:flex; flex-direction:column;
+    font-size:1.55cqw; line-height:1.12;
+    user-select:none; cursor:pointer;
+    transition:background .15s;
+  }
+  .cell:hover{background:#f6f9f1;}
+  .cell .bar{height:18%; flex:none; border-bottom:1px solid rgba(16,48,74,.4);}
+  .cell.side-left{flex-direction:row;}
+  .cell.side-left .bar{width:18%; height:auto; border-bottom:none; border-left:1px solid rgba(16,48,74,.4); order:2;}
+  .cell.side-right{flex-direction:row;}
+  .cell.side-right .bar{width:18%; height:auto; border-bottom:none; border-right:1px solid rgba(16,48,74,.4);}
+  .cell.side-top .bar{order:2; border-bottom:none; border-top:1px solid rgba(16,48,74,.4);}
+  .cell .body{flex:1; display:flex; flex-direction:column; justify-content:space-between; padding:4% 5%; min-width:0;}
+  .cell .nm{font-weight:700; letter-spacing:.01em; overflow:hidden;}
+  .cell .pr{font-size:.88em; color:var(--ink-soft); font-weight:600;}
+  .cell .ic{font-size:1.7em; line-height:1; opacity:.85;}
+  .cell.corner{align-items:center; justify-content:center; text-align:center; gap:2%; padding:4%;}
+  .cell.corner .nm{font-size:1.25em;}
+  .cell.corner .ic{font-size:2.6em;}
+  .cell .owner{
+    position:absolute; inset:auto 3% 3% auto; width:11%; aspect-ratio:1; border-radius:50%;
+    border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.25); display:none;
+  }
+  .cell .owner.show{display:block;}
+  .cell .mort{
+    position:absolute; inset:0; background:repeating-linear-gradient(45deg, rgba(120,30,30,.12) 0 6px, transparent 6px 12px);
+    display:none; pointer-events:none;
+  }
+  .cell .mort.show{display:block;}
+  .cell .bld{
+    position:absolute; top:2%; left:4%; right:4%; font-size:.95em; letter-spacing:.05em;
+    color:#1d6b38; text-shadow:0 1px 0 #fff; pointer-events:none; font-weight:800;
+  }
+  .cell .bld .ent{color:#a11212;}
+  .cell .toks{
+    position:absolute; left:4%; bottom:4%; display:flex; flex-wrap:wrap; gap:2px; max-width:92%;
+    pointer-events:none;
+  }
+  .tok{
+    font-size:2.1cqw; line-height:1; filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));
+    border-radius:50%;
+  }
+  .tok.here{animation:pop .35s ease;}
+  @keyframes pop{0%{transform:scale(.4)}70%{transform:scale(1.25)}100%{transform:scale(1)}}
+
+  /* ---------- board center ---------- */
+  .center{
+    grid-area:2/2/11/11; position:relative;
+    background:
+      radial-gradient(closest-side at 30% 25%, rgba(0,121,193,.07), transparent 70%),
+      var(--paper-deep);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:1.6cqw; padding:3cqw; overflow:hidden;
+    border:1px solid rgba(16,48,74,.35);
+  }
+  .center svg.topo{position:absolute; inset:0; width:100%; height:100%; pointer-events:none;}
+  .center > *{position:relative;}
+  .logo{
+    font-size:5.4cqw; font-weight:900; letter-spacing:.16em; color:var(--ink);
+    text-transform:uppercase; text-align:center;
+    text-shadow:0 2px 0 #fff;
+  }
+  .logo small{display:block; font-size:.32em; letter-spacing:.42em; color:var(--esri-blue-dark); font-weight:700;}
+  .dice{display:flex; gap:1.4cqw;}
+  .die{
+    width:7.5cqw; aspect-ratio:1; background:#fff; border:2px solid var(--ink); border-radius:14%;
+    display:grid; place-items:center; font-size:4.6cqw; font-weight:800; color:var(--ink);
+    box-shadow:0 3px 0 rgba(16,48,74,.3);
+  }
+  .die.rolling{animation:shake .45s ease;}
+  @keyframes shake{0%,100%{transform:rotate(0)}25%{transform:rotate(-14deg)}75%{transform:rotate(12deg)}}
+  .turn-banner{
+    font-size:2.2cqw; font-weight:800; background:#fff; border:2px solid var(--ink);
+    padding:.5cqw 2.4cqw; border-radius:999px; box-shadow:0 2px 0 rgba(16,48,74,.25);
+    display:flex; align-items:center; gap:1cqw; max-width:90%;
+  }
+  .turn-banner .dotp{width:1.6cqw; aspect-ratio:1; border-radius:50%; flex:none;}
+  .ctr-btns{display:flex; gap:1.4cqw; flex-wrap:wrap; justify-content:center;}
+  .btn{
+    background:var(--esri-blue); color:#fff; border:none; border-radius:8px;
+    padding:.7em 1.5em; font-weight:800; letter-spacing:.03em;
+    box-shadow:0 3px 0 var(--esri-blue-dark);
+    transition:transform .08s, box-shadow .08s, opacity .15s;
+  }
+  .btn:active{transform:translateY(2px); box-shadow:0 1px 0 var(--esri-blue-dark);}
+  .btn[disabled]{opacity:.35; cursor:not-allowed;}
+  .btn.warm{background:var(--accent-warm); box-shadow:0 3px 0 #b5621a;}
+  .btn.warm:active{box-shadow:0 1px 0 #b5621a;}
+  .btn.quiet{background:#fff; color:var(--ink); box-shadow:0 3px 0 rgba(16,48,74,.35); border:1.5px solid var(--ink);}
+  .btn.quiet:active{box-shadow:0 1px 0 rgba(16,48,74,.35);}
+  .btn.danger{background:#b02a23; box-shadow:0 3px 0 #7c1712;}
+  .center .btn{font-size:2cqw; padding:.55em 1.4em;}
+  .mini-log{
+    width:88%; max-height:18%; overflow:hidden; text-align:center;
+    font-size:1.7cqw; color:var(--ink-soft); font-weight:600;
+  }
+
+  /* ---------- side panel ---------- */
+  .panel{
+    background:var(--card); border:2px solid var(--ink); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:14px;
+  }
+  .panel h2{
+    font-size:.78rem; letter-spacing:.22em; text-transform:uppercase; color:var(--esri-blue-dark);
+    margin-bottom:10px; font-weight:800;
+  }
+  .pl{
+    display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px;
+    border:1.5px solid transparent; margin-bottom:6px;
+  }
+  .pl.active{border-color:var(--esri-blue); background:rgba(0,121,193,.07);}
+  .pl.dead{opacity:.4; text-decoration:line-through;}
+  .pl .ptok{font-size:1.3rem;}
+  .pl .pname{font-weight:800; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .pl .pcash{font-weight:800; color:#1d6b38; font-variant-numeric:tabular-nums;}
+  .pl .pdot{width:10px; height:10px; border-radius:50%; flex:none;}
+  .pl .pjail{font-size:.7rem; background:#fbe3e1; color:#a11212; border-radius:6px; padding:2px 6px; font-weight:700;}
+  .log{
+    max-height:200px; overflow-y:auto; font-size:.82rem; display:flex; flex-direction:column-reverse; gap:5px;
+  }
+  .log p{padding:5px 8px; background:#f4f7f0; border-radius:6px; border-left:3px solid var(--contour);}
+  .log p.money{border-left-color:#3e8e5a;}
+  .log p.bad{border-left-color:#d23b34;}
+  .log p.card{border-left-color:var(--accent-warm);}
+  .side-actions{display:flex; gap:8px; flex-wrap:wrap;}
+  .side-actions .btn{flex:1; font-size:.85rem; padding:.6em .5em;}
+
+  /* ---------- modal ---------- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(16,48,74,.55); display:none;
+    align-items:center; justify-content:center; padding:16px; z-index:50;
+    backdrop-filter:blur(2px);
+  }
+  .overlay.show{display:flex;}
+  .modal{
+    background:#fff; border:3px solid var(--ink); border-radius:14px; box-shadow:var(--shadow);
+    width:min(440px,100%); max-height:88vh; overflow:auto; padding:18px;
+    animation:rise .22s ease;
+  }
+  @keyframes rise{from{transform:translateY(14px); opacity:0} to{transform:none; opacity:1}}
+  .modal h3{font-size:1.05rem; margin-bottom:10px; letter-spacing:.02em;}
+  .modal .mbody{font-size:.92rem; margin-bottom:14px; color:#23425c;}
+  .modal .mbtns{display:flex; gap:8px; flex-wrap:wrap;}
+  .modal .mbtns .btn{flex:1; min-width:120px; font-size:.9rem;}
+  .deed{
+    border:2px solid var(--ink); border-radius:10px; overflow:hidden; margin-bottom:12px;
+  }
+  .deed .dhead{padding:10px; color:#fff; font-weight:900; text-align:center; letter-spacing:.05em; text-shadow:0 1px 2px rgba(0,0,0,.3);}
+  .deed table{width:100%; border-collapse:collapse; font-size:.85rem;}
+  .deed td{padding:5px 12px; border-top:1px solid #e3e9dd;}
+  .deed td:last-child{text-align:right; font-weight:700; font-variant-numeric:tabular-nums;}
+  .deed tr.hl td{background:#fdf3e4;}
+  .flavor{font-size:.78rem; color:var(--ink-soft); font-style:italic; padding:8px 12px;}
+  .gamecard{
+    border:2px dashed var(--accent-warm); border-radius:10px; padding:14px; background:#fff8ef;
+    font-weight:700; text-align:center; margin-bottom:12px;
+  }
+  .gamecard.chest{border-color:var(--esri-blue); background:#eef6fb;}
+  .gamecard .ctype{font-size:.7rem; letter-spacing:.3em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:6px; font-weight:800;}
+
+  /* ---------- manage list ---------- */
+  .mg-item{
+    display:flex; align-items:center; gap:8px; padding:7px 8px; border:1.5px solid #dfe6d8;
+    border-radius:8px; margin-bottom:6px; font-size:.84rem;
+  }
+  .mg-item .swatch{width:12px; height:24px; border-radius:3px; flex:none; border:1px solid rgba(0,0,0,.25);}
+  .mg-item .mg-nm{flex:1; font-weight:700; min-width:0;}
+  .mg-item .mg-nm small{display:block; font-weight:600; color:var(--ink-soft);}
+  .mg-item .mbtn{
+    border:1.5px solid var(--ink); background:#fff; border-radius:6px; padding:3px 8px;
+    font-size:.72rem; font-weight:800;
+  }
+  .mg-item .mbtn:hover{background:var(--paper);}
+  .mg-item .mbtn[disabled]{opacity:.3; cursor:not-allowed;}
+  .mg-item.morted{background:repeating-linear-gradient(45deg, #fff 0 8px, #fbeeee 8px 16px);}
+
+  /* ---------- setup ---------- */
+  .setup{max-width:440px; margin:6vh auto; }
+  .setup .panel{padding:26px;}
+  .setup h1{font-size:1.7rem; letter-spacing:.1em; text-transform:uppercase; text-align:center;}
+  .setup h1 small{display:block; font-size:.5em; letter-spacing:.4em; color:var(--esri-blue-dark);}
+  .setup .row{display:flex; gap:8px; align-items:center; margin-top:10px;}
+  .setup input{
+    flex:1; font:inherit; padding:.55em .8em; border:2px solid var(--ink); border-radius:8px;
+  }
+  .setup select{font:inherit; padding:.5em; border:2px solid var(--ink); border-radius:8px; background:#fff;}
+  .setup .start{width:100%; margin-top:18px; font-size:1rem;}
+  .setup .blurb{font-size:.84rem; color:var(--ink-soft); margin-top:14px; text-align:center;}
+  .hidden{display:none !important;}
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important; transition:none !important;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ SETUP SCREEN ============ -->
+<div class="setup" id="setupScreen">
+  <div class="panel">
+    <h1>GISopoly<small>The Esri Edition</small></h1>
+    <p class="blurb">Buy ArcGIS products, charge your rivals rent for every map they make, and bankrupt them into open-source alternatives. 2–4 players, hot-seat.</p>
+    <div id="playerRows"></div>
+    <div class="row">
+      <button class="btn quiet" id="addPlayerBtn" style="flex:1">+ Add player</button>
+    </div>
+    <button class="btn start" id="startBtn">Start surveying</button>
+  </div>
+</div>
+
+<!-- ============ GAME ============ -->
+<div class="app hidden" id="gameScreen">
+  <div class="board-wrap">
+    <div class="board" id="board"></div>
+  </div>
+
+  <div class="side">
+    <div class="panel">
+      <h2>Analysts</h2>
+      <div id="playerList"></div>
+    </div>
+    <div class="panel">
+      <h2>Actions</h2>
+      <div class="side-actions">
+        <button class="btn quiet" id="manageBtn">Manage portfolio</button>
+        <button class="btn danger" id="bankruptBtn">Declare bankruptcy</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Survey log</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL ============ -->
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal"></div>
+</div>
+
+<script>
+"use strict";
+/* ================= DATA ================= */
+const GROUPS = {
+  brown:  {label:"Field Capture",     css:"var(--g-brown)",  houseCost:50},
+  lblue:  {label:"Mobile Workforce",  css:"var(--g-lblue)",  houseCost:50},
+  pink:   {label:"Storytelling",      css:"var(--g-pink)",   houseCost:100},
+  orange: {label:"Reality Capture",   css:"var(--g-orange)", houseCost:100},
+  red:    {label:"Real-Time Analytics", css:"var(--g-red)",  houseCost:150},
+  yellow: {label:"Planning & Business", css:"var(--g-yellow)", houseCost:150},
+  green:  {label:"Cloud GIS",         css:"var(--g-green)",  houseCost:200},
+  dblue:  {label:"Flagship Platform", css:"var(--g-dblue)",  houseCost:200},
+};
+
+const FLAVOR = {
+  "ArcGIS Survey123":"Forms so smart your field crew can't break them. Probably.",
+  "ArcGIS QuickCapture":"One big button. Tap it. Data happens.",
+  "ArcGIS Field Maps":"All your field work, one app, zero excuses.",
+  "ArcGIS Navigator":"Recalculating... but with authoritative basemaps.",
+  "ArcGIS Workforce":"Assign work to people who were definitely going to do it anyway.",
+  "ArcGIS StoryMaps":"Where every map gets a three-act structure.",
+  "ArcGIS Instant Apps":"An app in minutes. Configuring it: the rest of your week.",
+  "ArcGIS Experience Builder":"Drag, drop, and suddenly you're a developer.",
+  "Drone2Map":"Your drone footage, but make it photogrammetry.",
+  "Site Scan for ArcGIS":"Plan the flight, fly the plan, process the pixels.",
+  "ArcGIS Reality Studio":"Turn cities into meshes. Legally.",
+  "ArcGIS Dashboards":"Big numbers. Gauges. Your boss loves gauges.",
+  "ArcGIS Insights":"Drag a dataset, get an epiphany.",
+  "ArcGIS Velocity":"IoT feeds so fast your dashboard gets motion sickness.",
+  "ArcGIS Hub":"Open data, community engagement, and a very nice landing page.",
+  "ArcGIS Urban":"SimCity for people with zoning ordinances.",
+  "ArcGIS Business Analyst":"Find out exactly where to put the coffee shop.",
+  "ArcGIS Living Atlas":"The world's foremost collection of geographic information. Yours now.",
+  "ArcGIS Image":"Petabytes of pixels, ready for analysis.",
+  "ArcGIS Online":"The cloud where all your web maps live rent-free. Until now.",
+  "ArcGIS Enterprise":"Your GIS. Your infrastructure. Your 3 a.m. server alerts.",
+  "ArcGIS Pro":"64-bit, multithreaded, ribbon-interfaced glory. The crown jewel.",
+};
+
+// rents: [base, 1ext, 2ext, 3ext, 4ext, enterprise]
+const BOARD = [
+  {type:"go",   name:"LAUNCH", icon:"\u{1F680}"},
+  {type:"prop", name:"ArcGIS Survey123", short:"Survey123", group:"brown", price:60,  rents:[2,10,30,90,160,250]},
+  {type:"chest",name:"Field Notes", icon:"\u{1F4DD}"},
+  {type:"prop", name:"ArcGIS QuickCapture", short:"QuickCapture", group:"brown", price:60, rents:[4,20,60,180,320,450]},
+  {type:"tax",  name:"License Fee", amount:200, icon:"\u{1F9FE}"},
+  {type:"rail", name:"GIS Server", price:200, icon:"\u{1F5A5}\uFE0F"},
+  {type:"prop", name:"ArcGIS Field Maps", short:"Field Maps", group:"lblue", price:100, rents:[6,30,90,270,400,550]},
+  {type:"chance",name:"Geocode", icon:"\u{1F4CD}"},
+  {type:"prop", name:"ArcGIS Navigator", short:"Navigator", group:"lblue", price:100, rents:[6,30,90,270,400,550]},
+  {type:"prop", name:"ArcGIS Workforce", short:"Workforce", group:"lblue", price:120, rents:[8,40,100,300,450,600]},
+  {type:"jail", name:"Projection Error", icon:"\u{1F30D}"},
+  {type:"prop", name:"ArcGIS StoryMaps", short:"StoryMaps", group:"pink", price:140, rents:[10,50,150,450,625,750]},
+  {type:"util", name:"Esri Training", price:150, icon:"\u{1F393}"},
+  {type:"prop", name:"ArcGIS Instant Apps", short:"Instant Apps", group:"pink", price:140, rents:[10,50,150,450,625,750]},
+  {type:"prop", name:"ArcGIS Experience Builder", short:"Experience Builder", group:"pink", price:160, rents:[12,60,180,500,700,900]},
+  {type:"rail", name:"GeoAnalytics Server", price:200, icon:"\u{1F5A5}\uFE0F"},
+  {type:"prop", name:"Drone2Map", short:"Drone2Map", group:"orange", price:180, rents:[14,70,200,550,750,950]},
+  {type:"chest",name:"Field Notes", icon:"\u{1F4DD}"},
+  {type:"prop", name:"Site Scan for ArcGIS", short:"Site Scan", group:"orange", price:180, rents:[14,70,200,550,750,950]},
+  {type:"prop", name:"ArcGIS Reality Studio", short:"Reality Studio", group:"orange", price:200, rents:[16,80,220,600,800,1000]},
+  {type:"parking", name:"Esri User Conference", icon:"\u{1F3DF}\uFE0F"},
+  {type:"prop", name:"ArcGIS Dashboards", short:"Dashboards", group:"red", price:220, rents:[18,90,250,700,875,1050]},
+  {type:"chance",name:"Geocode", icon:"\u{1F4CD}"},
+  {type:"prop", name:"ArcGIS Insights", short:"Insights", group:"red", price:220, rents:[18,90,250,700,875,1050]},
+  {type:"prop", name:"ArcGIS Velocity", short:"Velocity", group:"red", price:240, rents:[20,100,300,750,925,1100]},
+  {type:"rail", name:"GeoEvent Server", price:200, icon:"\u{1F5A5}\uFE0F"},
+  {type:"prop", name:"ArcGIS Hub", short:"Hub", group:"yellow", price:260, rents:[22,110,330,800,975,1150]},
+  {type:"prop", name:"ArcGIS Urban", short:"Urban", group:"yellow", price:260, rents:[22,110,330,800,975,1150]},
+  {type:"util", name:"Esri Support", price:150, icon:"\u{1F3A7}"},
+  {type:"prop", name:"ArcGIS Business Analyst", short:"Business Analyst", group:"yellow", price:280, rents:[24,120,360,850,1025,1200]},
+  {type:"gotojail", name:"License Expired", icon:"\u{26D4}"},
+  {type:"prop", name:"ArcGIS Living Atlas", short:"Living Atlas", group:"green", price:300, rents:[26,130,390,900,1100,1275]},
+  {type:"prop", name:"ArcGIS Image", short:"ArcGIS Image", group:"green", price:300, rents:[26,130,390,900,1100,1275]},
+  {type:"chest",name:"Field Notes", icon:"\u{1F4DD}"},
+  {type:"prop", name:"ArcGIS Online", short:"ArcGIS Online", group:"green", price:320, rents:[28,150,450,1000,1200,1400]},
+  {type:"rail", name:"Portal for ArcGIS", price:200, icon:"\u{1F5A5}\uFE0F"},
+  {type:"chance",name:"Geocode", icon:"\u{1F4CD}"},
+  {type:"prop", name:"ArcGIS Enterprise", short:"Enterprise", group:"dblue", price:350, rents:[35,175,500,1100,1300,1500]},
+  {type:"tax",  name:"Maintenance Fee", amount:100, icon:"\u{1FA99}"},
+  {type:"prop", name:"ArcGIS Pro", short:"ArcGIS Pro", group:"dblue", price:400, rents:[50,200,600,1400,1700,2000]},
+];
+BOARD.forEach(t => { if (t.type==="prop"||t.type==="rail"||t.type==="util"){ t.owner=null; t.mortgaged=false; t.houses=0; } });
+
+const TOKENS = ["\u{1F4CD}","\u{1F6F0}\uFE0F","\u{1F9ED}","\u{1F681}"];
+const TOKEN_NAMES = ["Map Pin","Satellite","Compass","Drone"];
+const PCOLORS = ["var(--p0)","var(--p1)","var(--p2)","var(--p3)"];
+
+const CHANCE = [
+  {t:"Your StoryMap goes viral on cartography Twitter. Collect $100.", fn:p=>gain(p,100)},
+  {t:"Advance to LAUNCH. Collect $200.", fn:p=>moveTo(p,0,true)},
+  {t:"Unexpected server maintenance. Pay $50.", fn:p=>charge(p,50,null,"server maintenance")},
+  {t:"Your UC plenary demo runs flawlessly. The crowd goes wild. Collect $150.", fn:p=>gain(p,150)},
+  {t:"Basemap cache rebuild fails at 99%. Pay $75.", fn:p=>charge(p,75,null,"cache rebuild")},
+  {t:"Datum mismatch detected! Go directly to Projection Error. Do not pass LAUNCH.", fn:p=>sendToJail(p)},
+  {t:"Get Out of Projection Error, free. Keep this card.", fn:p=>{p.getOut++; log(`${p.name} pockets a Get-Out-of-Projection-Error card.`, "card"); endResolve();}},
+  {t:"Advance to ArcGIS Pro.", fn:p=>moveTo(p,39,true)},
+  {t:"You win the Map Gallery contest. Collect $100.", fn:p=>gain(p,100)},
+  {t:"You hogged the org's credits running geoenrichment. Pay each analyst $25.", fn:p=>payEach(p,25)},
+  {t:"Geocoding job finishes early. Move forward 3 spaces.", fn:p=>moveRelative(p,3)},
+  {t:"Field crew loses GPS signal in a canyon. Move back 3 spaces.", fn:p=>moveRelative(p,-3)},
+];
+const CHEST = [
+  {t:"Maintenance renewal rebate. Collect $100.", fn:p=>gain(p,100)},
+  {t:"Credit budget exceeded. The admin is not pleased. Pay $100.", fn:p=>charge(p,100,null,"credit overage")},
+  {t:"Crowdsourced data-cleanup bounty. Collect $50.", fn:p=>gain(p,50)},
+  {t:"Your team wins the GIS hackathon. Collect $200.", fn:p=>gain(p,200)},
+  {t:"License true-up audit. Pay $50.", fn:p=>charge(p,50,null,"license true-up")},
+  {t:"Get Out of Projection Error, free. Keep this card.", fn:p=>{p.getOut++; log(`${p.name} pockets a Get-Out-of-Projection-Error card.`, "card"); endResolve();}},
+  {t:"You published in Web Mercator when the client wanted State Plane. Go directly to Projection Error.", fn:p=>sendToJail(p)},
+  {t:"Parcel boundary error resolved in your favor. Collect $75.", fn:p=>gain(p,75)},
+  {t:"You run a sold-out training workshop. Collect $20 from every analyst.", fn:p=>collectEach(p,20)},
+  {t:"Drone battery gives out mid-flight. Replacement: pay $40.", fn:p=>charge(p,40,null,"drone battery")},
+];
+
+/* ================= STATE ================= */
+let state = null;
+let chanceDeck = [], chestDeck = [];
+const $ = sel => document.querySelector(sel);
+const fmt = n => "$" + n.toLocaleString();
+
+function shuffle(a){ const b=a.slice(); for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [b[i],b[j]]=[b[j],b[i]];} return b; }
+
+/* ================= SETUP UI ================= */
+const setupScreen = $("#setupScreen"), gameScreen = $("#gameScreen");
+let setupCount = 0;
+function addPlayerRow(defName){
+  if (setupCount >= 4) return;
+  const i = setupCount++;
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `
+    <select aria-label="Token">${TOKENS.map((t,j)=>`<option value="${j}" ${j===i?"selected":""}>${t} ${TOKEN_NAMES[j]}</option>`).join("")}</select>
+    <select aria-label="Player type" class="ptype">
+      <option value="human" ${i===0?"selected":""}>\u{1F9D1} Human</option>
+      <option value="ai" ${i>0?"selected":""}>\u{1F916} AI</option>
+    </select>
+    <input type="text" maxlength="14" placeholder="Analyst ${i+1}" value="${defName||""}">`;
+  $("#playerRows").appendChild(row);
+  if (setupCount >= 4) $("#addPlayerBtn").disabled = true;
+}
+addPlayerRow(); addPlayerRow();
+$("#addPlayerBtn").addEventListener("click", ()=>addPlayerRow());
+$("#startBtn").addEventListener("click", ()=>{
+  const rows = [...document.querySelectorAll("#playerRows .row")];
+  const used = new Set();
+  const BOT_NAMES = ["GeoBot","RasterBot","VectorBot","TopoBot"];
+  let botN = 0;
+  const players = rows.map((r,i)=>{
+    let tok = +r.querySelector("select").value;
+    while (used.has(tok)) tok = (tok+1)%4;
+    used.add(tok);
+    const isAI = r.querySelector(".ptype").value === "ai";
+    const typed = r.querySelector("input").value.trim();
+    return {
+      name: typed || (isAI ? BOT_NAMES[botN++ % 4] : `Analyst ${i+1}`),
+      token: TOKENS[tok], color: PCOLORS[i], isAI,
+      cash: 1500, pos: 0, inJail: false, jailTurns: 0, getOut: 0, bankrupt: false,
+    };
+  });
+  startGame(players);
+});
+
+function startGame(players){
+  state = { players, turn: 0, dice: [1,1], doublesRun: 0, phase: "roll", lastRoll: 2, rolled:false };
+  chanceDeck = shuffle(CHANCE); chestDeck = shuffle(CHEST);
+  setupScreen.classList.add("hidden");
+  gameScreen.classList.remove("hidden");
+  buildBoard();
+  log(`Welcome to GISopoly. ${players[0].name} surveys first \u2014 roll the dice!`);
+  render();
+  setInterval(aiWatch, 450);
+}
+
+/* ================= BOARD RENDERING ================= */
+function gridPos(i){
+  if (i<=10)  return {row:11, col:11-i, side: i===0||i===10 ? "corner" : "bottom"};
+  if (i<=19)  return {row:11-(i-10), col:1, side:"left"};
+  if (i<=30)  return {row:1, col:i-19, side: i===20||i===30 ? "corner" : "top"};
+  return {row:i-29, col:11, side:"right"};
+}
+
+function buildBoard(){
+  const board = $("#board");
+  board.innerHTML = "";
+  // center
+  const center = document.createElement("div");
+  center.className = "center";
+  center.innerHTML = `
+    <svg class="topo" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g fill="none" stroke="var(--contour)" stroke-width="1.4" opacity=".8">
+        <path d="M-20,480 C120,420 180,520 320,470 S560,520 640,440"/>
+        <path d="M-20,520 C130,460 200,560 340,510 S570,560 640,490"/>
+        <path d="M-20,440 C110,390 170,480 310,430 S540,480 640,400"/>
+        <path d="M120,160 C160,110 250,110 290,160 S290,260 210,260 80,210 120,160 Z"/>
+        <path d="M140,170 C175,130 240,130 270,170 S265,240 210,240 110,210 140,170 Z"/>
+        <path d="M160,180 C185,150 230,150 250,180 S240,222 205,222 140,205 160,180 Z"/>
+        <path d="M430,120 C480,90 550,110 560,170 S510,260 450,240 380,150 430,120 Z"/>
+        <path d="M445,135 C485,112 535,128 543,170 S505,235 458,220 405,158 445,135 Z"/>
+      </g>
+      <g stroke="var(--esri-blue)" stroke-width="2" fill="none" opacity=".35">
+        <path d="M-20,330 C100,300 200,360 320,330 S520,290 640,330" stroke-dasharray="1 7" stroke-linecap="round"/>
+      </g>
+    </svg>
+    <div class="logo">GISopoly<small>The Esri Edition</small></div>
+    <div class="turn-banner"><span class="dotp" id="turnDot"></span><span id="turnName"></span><span id="turnCash" style="color:#1d6b38"></span></div>
+    <div class="dice"><div class="die" id="die0">?</div><div class="die" id="die1">?</div></div>
+    <div class="ctr-btns">
+      <button class="btn" id="rollBtn">Roll dice</button>
+      <button class="btn warm" id="endBtn">End turn</button>
+    </div>
+    <div class="mini-log" id="miniLog">Survey says: roll to begin.</div>`;
+  board.appendChild(center);
+
+  BOARD.forEach((tile,i)=>{
+    const {row,col,side} = gridPos(i);
+    const cell = document.createElement("div");
+    cell.className = "cell" + (side==="corner" ? " corner" : ` side-${side}`);
+    cell.style.gridArea = `${row}/${col}`;
+    cell.dataset.idx = i;
+    let inner = "";
+    if (tile.type==="prop"){
+      inner = `<div class="bar" style="background:${GROUPS[tile.group].css}"></div>
+        <div class="body"><span class="nm">${tile.short}</span><span class="pr">${fmt(tile.price)}</span></div>`;
+    } else if (tile.type==="rail" || tile.type==="util"){
+      inner = `<div class="bar" style="background:${tile.type==="rail"?"var(--rail)":"var(--util)"}"></div>
+        <div class="body"><span class="nm">${tile.name}</span><span class="pr">${fmt(tile.price)}</span></div>`;
+    } else if (side==="corner"){
+      inner = `<span class="ic">${tile.icon}</span><span class="nm">${tile.name}</span>`;
+    } else {
+      inner = `<div class="body" style="align-items:center;text-align:center;justify-content:center;gap:6%">
+        <span class="nm">${tile.name}</span><span class="ic">${tile.icon}</span>
+        ${tile.type==="tax"?`<span class="pr">Pay ${fmt(tile.amount)}</span>`:""}</div>`;
+    }
+    cell.innerHTML = inner + `<div class="bld"></div><div class="owner"></div><div class="mort"></div><div class="toks"></div>`;
+    cell.addEventListener("click", ()=>showTileInfo(i));
+    board.appendChild(cell);
+  });
+
+  $("#rollBtn").addEventListener("click", onRoll);
+  $("#endBtn").addEventListener("click", endTurn);
+  $("#manageBtn").addEventListener("click", ()=>openManage());
+  $("#bankruptBtn").addEventListener("click", confirmBankrupt);
+}
+
+function render(){
+  const p = cur();
+  // center banner
+  $("#turnDot").style.background = p.color;
+  $("#turnName").textContent = `${p.token} ${p.name}`;
+  $("#turnCash").textContent = fmt(p.cash);
+  $("#rollBtn").disabled = state.phase!=="roll" || p.isAI;
+  $("#endBtn").disabled = state.phase!=="end" || p.isAI;
+  $("#manageBtn").disabled = p.isAI || state.phase==="over";
+  $("#bankruptBtn").disabled = p.isAI || state.phase==="over";
+  // cells
+  document.querySelectorAll(".cell[data-idx]").forEach(cell=>{
+    const i = +cell.dataset.idx, tile = BOARD[i];
+    const toks = cell.querySelector(".toks");
+    toks.innerHTML = state.players.map((pl,j)=>
+      (!pl.bankrupt && pl.pos===i) ? `<span class="tok ${j===state.turn?"here":""}" title="${pl.name}">${pl.token}</span>` : ""
+    ).join("");
+    if (tile.owner!==undefined){
+      const ow = cell.querySelector(".owner");
+      if (tile.owner!==null){ ow.classList.add("show"); ow.style.background = state.players[tile.owner].color; }
+      else ow.classList.remove("show");
+      cell.querySelector(".mort").classList.toggle("show", !!tile.mortgaged);
+      const bld = cell.querySelector(".bld");
+      bld.innerHTML = tile.houses===5 ? `<span class="ent">\u2605 ENT</span>` : "\u25AA".repeat(tile.houses||0);
+    }
+  });
+  // player list
+  $("#playerList").innerHTML = state.players.map((pl,j)=>`
+    <div class="pl ${j===state.turn?"active":""} ${pl.bankrupt?"dead":""}">
+      <span class="pdot" style="background:${pl.color}"></span>
+      <span class="ptok">${pl.token}</span>
+      <span class="pname">${pl.isAI?"\u{1F916} ":""}${pl.name}${pl.getOut?` \u{1F39F}\uFE0F\u00D7${pl.getOut}`:""}</span>
+      ${pl.inJail?`<span class="pjail">PROJ ERR</span>`:""}
+      <span class="pcash">${fmt(pl.cash)}</span>
+    </div>`).join("");
+}
+
+function cur(){ return state.players[state.turn]; }
+
+/* ================= LOG & MODAL ================= */
+function log(msg, cls=""){
+  const p = document.createElement("p");
+  if (cls) p.className = cls;
+  p.textContent = msg;
+  $("#log").prepend(p);
+  $("#miniLog").textContent = msg;
+}
+let modalKind = null, modalHandled = false;
+function showModal({title, html, buttons, dismissible=false, kind=null}){
+  modalKind = kind; modalHandled = false;
+  const m = $("#modal");
+  m.innerHTML = `<h3>${title}</h3><div class="mbody">${html||""}</div><div class="mbtns"></div>`;
+  const btnWrap = m.querySelector(".mbtns");
+  (buttons||[]).forEach(b=>{
+    const el = document.createElement("button");
+    el.className = "btn " + (b.cls||"");
+    el.textContent = b.label;
+    el.addEventListener("click", ()=>{ if(!b.keepOpen) closeModal(); b.fn && b.fn(); });
+    btnWrap.appendChild(el);
+  });
+  $("#overlay").classList.add("show");
+  $("#overlay").onclick = dismissible ? (e)=>{ if(e.target.id==="overlay") closeModal(); } : null;
+}
+function closeModal(){ $("#overlay").classList.remove("show"); }
+
+/* ================= DICE & MOVEMENT ================= */
+function onRoll(){
+  if (state.phase!=="roll") return;
+  state.phase = "moving";
+  const d0 = 1+Math.floor(Math.random()*6), d1 = 1+Math.floor(Math.random()*6);
+  state.dice = [d0,d1]; state.lastRoll = d0+d1;
+  const dieEls = [$("#die0"), $("#die1")];
+  dieEls.forEach(e=>{e.classList.add("rolling");});
+  let ticks = 0;
+  const spin = setInterval(()=>{
+    dieEls.forEach(e=>e.textContent = 1+Math.floor(Math.random()*6));
+    if (++ticks >= 6){
+      clearInterval(spin);
+      dieEls[0].textContent = d0; dieEls[1].textContent = d1;
+      dieEls.forEach(e=>e.classList.remove("rolling"));
+      afterRoll(d0,d1);
+    }
+  }, 70);
+}
+
+function afterRoll(d0,d1){
+  const p = cur();
+  const isDouble = d0===d1;
+  if (p.inJail){
+    if (isDouble){
+      p.inJail = false; p.jailTurns = 0;
+      log(`${p.name} rolls doubles and reprojects out of Projection Error!`);
+      walk(p, d0+d1, false);
+    } else {
+      p.jailTurns++;
+      if (p.jailTurns >= 3){
+        log(`${p.name} fails a third reprojection. Forced to pay the $50 support fee.`, "bad");
+        charge(p, 50, null, "support fee", ()=>{ p.inJail=false; p.jailTurns=0; walk(p, d0+d1, false); });
+      } else {
+        log(`${p.name} fails to reproject (no doubles). Attempt ${p.jailTurns} of 3.`, "bad");
+        state.phase = "end"; render();
+      }
+    }
+    return;
+  }
+  if (isDouble){
+    state.doublesRun++;
+    if (state.doublesRun >= 3){
+      log(`${p.name} rolls three doubles \u2014 flagged for suspicious activity!`, "bad");
+      sendToJail(p);
+      return;
+    }
+    log(`${p.name} rolls ${d0}+${d1} \u2014 doubles! Roll again after this move.`);
+  } else {
+    state.doublesRun = 0;
+    log(`${p.name} rolls ${d0}+${d1}.`);
+  }
+  walk(p, d0+d1, isDouble);
+}
+
+function walk(p, steps, extraRoll){
+  state.phase = "moving";
+  state.pendingExtra = extraRoll;
+  let left = steps;
+  const stepper = setInterval(()=>{
+    p.pos = (p.pos + 1) % 40;
+    if (p.pos === 0){
+      p.cash += 200;
+      log(`${p.name} passes LAUNCH and collects $200.`, "money");
+    }
+    render();
+    if (--left <= 0){
+      clearInterval(stepper);
+      resolveTile(p);
+    }
+  }, 130);
+}
+
+function moveTo(p, idx, collectGo){
+  // teleport with GO collection if passing
+  if (collectGo && idx <= p.pos && idx !== p.pos){
+    p.cash += 200;
+    log(`${p.name} passes LAUNCH and collects $200.`, "money");
+  }
+  p.pos = idx;
+  render();
+  resolveTile(p);
+}
+function moveRelative(p, delta){
+  p.pos = ((p.pos + delta) % 40 + 40) % 40;
+  render();
+  resolveTile(p);
+}
+
+/* ================= TILE RESOLUTION ================= */
+function resolveTile(p){
+  const tile = BOARD[p.pos];
+  state.phase = "resolving";
+  render();
+  switch(tile.type){
+    case "go":
+      log(`${p.name} lands on LAUNCH.`); endResolve(); break;
+    case "parking":
+      log(`${p.name} attends the Esri User Conference. Free swag, no charges.`);
+      endResolve(); break;
+    case "jail":
+      log(`${p.name} is just visiting Projection Error. Datum intact.`);
+      endResolve(); break;
+    case "gotojail":
+      log(`${p.name}'s license expired mid-edit session!`, "bad");
+      sendToJail(p); break;
+    case "tax":
+      showModal({
+        title: tile.name,
+        html: `${p.name}, your ${tile.name.toLowerCase()} is due: <b>${fmt(tile.amount)}</b>.`,
+        kind:'pay',
+        buttons: [{label:`Pay ${fmt(tile.amount)}`, fn:()=>charge(p, tile.amount, null, tile.name.toLowerCase())}]
+      });
+      break;
+    case "chance": drawCard(p, chanceDeck, "Geocode"); break;
+    case "chest":  drawCard(p, chestDeck, "Field Notes"); break;
+    case "prop": case "rail": case "util":
+      resolveOwnable(p, tile); break;
+  }
+}
+
+function resolveOwnable(p, tile){
+  if (tile.owner === null){
+    offerPurchase(p, tile);
+  } else if (tile.owner === state.turn){
+    log(`${p.name} visits their own ${tile.name}. The licenses hum contentedly.`);
+    endResolve();
+  } else if (tile.mortgaged){
+    log(`${tile.name} is mortgaged \u2014 no rent due.`);
+    endResolve();
+  } else {
+    const owner = state.players[tile.owner];
+    const rent = computeRent(tile);
+    showModal({
+      title: "Rent due",
+      html: `${p.name} lands on <b>${tile.name}</b>, owned by ${owner.token} <b>${owner.name}</b>.<br>Rent: <b>${fmt(rent)}</b>${tile.type==="util" ? ` (dice \u00D7 ${countOwned(tile.owner,"util")===2?10:4})` : ""}`,
+      kind:'pay',
+      buttons: [{label:`Pay ${fmt(rent)}`, fn:()=>charge(p, rent, owner, `rent on ${tile.name}`)}]
+    });
+  }
+}
+
+function offerPurchase(p, tile){
+  showModal({
+    kind: "buy",
+    title: "Unclaimed product",
+    html: deedHTML(tile) + `<p>${p.name}, acquire <b>${tile.name}</b> for <b>${fmt(tile.price)}</b>?</p>`,
+    buttons: [
+      {label:`Buy \u2022 ${fmt(tile.price)}`, fn:()=>{
+        if (p.cash < tile.price){
+          log(`${p.name} can't afford ${tile.name}.`, "bad");
+          showModal({kind:"buyfail", title:"Insufficient credits", html:`You have ${fmt(p.cash)} \u2014 not enough for ${fmt(tile.price)}. Try mortgaging assets first, or pass.`, buttons:[
+            {label:"Manage portfolio", fn:()=>openManage(()=>offerPurchase(p,tile))},
+            {label:"Pass", cls:"quiet", fn:endResolve}
+          ]});
+          return;
+        }
+        p.cash -= tile.price;
+        tile.owner = state.turn;
+        log(`${p.name} acquires ${tile.name} for ${fmt(tile.price)}.`, "money");
+        if (tile.type==="prop" && ownsGroup(state.turn, tile.group)){
+          log(`${p.name} completes the ${GROUPS[tile.group].label} suite! Base rents doubled; extensions unlocked.`, "money");
+        }
+        endResolve();
+      }},
+      {label:"Pass", cls:"quiet", fn:()=>{ log(`${p.name} passes on ${tile.name}.`); endResolve(); }}
+    ]
+  });
+}
+
+function endResolve(){
+  render();
+  if (checkWin()) return;
+  if (state.pendingExtra && !cur().inJail && !cur().bankrupt){
+    state.pendingExtra = false;
+    state.phase = "roll";
+    log(`${cur().name} gets another roll (doubles).`);
+  } else {
+    state.phase = "end";
+  }
+  render();
+}
+
+function endTurn(){
+  if (state.phase!=="end") return;
+  state.doublesRun = 0; state.pendingExtra = false;
+  let next = state.turn;
+  do { next = (next+1) % state.players.length; } while (state.players[next].bankrupt);
+  state.turn = next;
+  const p = cur();
+  state.phase = "roll";
+  if (p.inJail){
+    render();
+    if (!p.isAI) jailOptions(p);
+    else log(`${p.name} is wrestling with Projection Error...`);
+  } else {
+    log(`${p.name}'s turn. Roll the dice.`);
+    render();
+  }
+}
+
+/* ================= JAIL ================= */
+function sendToJail(p){
+  p.pos = 10; p.inJail = true; p.jailTurns = 0;
+  state.pendingExtra = false; state.doublesRun = 0;
+  log(`${p.name} is stuck in Projection Error. Nothing lines up anymore.`, "bad");
+  state.phase = "end";
+  render();
+}
+
+function jailOptions(p){
+  const btns = [
+    {label:"Roll for doubles", fn:()=>{ state.phase="roll"; render(); onRoll(); }},
+    {label:"Pay $50 fee", cls:"quiet", fn:()=>{
+      charge(p, 50, null, "support fee", ()=>{
+        p.inJail=false; p.jailTurns=0;
+        log(`${p.name} pays $50 to Esri Support. \u201CHave you tried redefining the projection?\u201D`);
+        state.phase="roll"; render();
+      });
+    }},
+  ];
+  if (p.getOut > 0){
+    btns.push({label:"Use Get-Out card", cls:"warm", fn:()=>{
+      p.getOut--; p.inJail=false; p.jailTurns=0;
+      log(`${p.name} plays a Get-Out-of-Projection-Error card.`, "card");
+      state.phase="roll"; render();
+    }});
+  }
+  showModal({
+    kind:"jail",
+    title:"Projection Error",
+    html:`${p.name}, your coordinates are scrambled (attempt ${p.jailTurns+1} of 3). Choose how to escape:`,
+    buttons: btns
+  });
+}
+
+/* ================= CARDS ================= */
+function drawCard(p, deck, kind){
+  const card = deck.shift(); deck.push(card);
+  log(`${p.name} draws a ${kind} card: ${card.t}`, "card");
+  showModal({
+    kind:'card',
+    title:`${kind==="Geocode" ? "\u{1F4CD}" : "\u{1F4DD}"} ${kind}`,
+    html:`<div class="gamecard ${kind==="Field Notes"?"chest":""}"><div class="ctype">${kind}</div>${card.t}</div>`,
+    buttons:[{label:"OK", fn:()=>card.fn(p)}]
+  });
+}
+
+function gain(p, amt){
+  p.cash += amt;
+  log(`${p.name} collects ${fmt(amt)}.`, "money");
+  endResolve();
+}
+function payEach(p, amt){
+  const others = state.players.filter(pl=>!pl.bankrupt && pl!==p);
+  charge(p, amt*others.length, null, `payments to other analysts`, ()=>{
+    others.forEach(pl=>pl.cash+=amt);
+    endResolve();
+  }, false);
+}
+function collectEach(p, amt){
+  state.players.forEach(pl=>{ if(!pl.bankrupt && pl!==p){ pl.cash -= amt; p.cash += amt; } });
+  log(`${p.name} collects ${fmt(amt)} from each analyst.`, "money");
+  endResolve();
+}
+
+/* ================= MONEY, DEBT, BANKRUPTCY ================= */
+function charge(p, amount, recipient, reason, onPaid, autoEnd=true){
+  const settle = ()=>{
+    p.cash -= amount;
+    if (recipient) recipient.cash += amount;
+    log(`${p.name} pays ${fmt(amount)} ${recipient?`to ${recipient.name}`:""} for ${reason}.`, recipient?"":"bad");
+    if (onPaid) onPaid(); else if (autoEnd) endResolve(); 
+    render();
+  };
+  if (p.cash >= amount){ settle(); return; }
+  if (p.isAI){
+    aiRaiseFunds(p, amount);
+    if (p.cash >= amount) settle();
+    else doBankrupt(p, recipient);
+    return;
+  }
+  // debt flow
+  showModal({
+    kind:"debt",
+    title:"Insufficient credits",
+    html:`${p.name} owes <b>${fmt(amount)}</b> for ${reason} but has only <b>${fmt(p.cash)}</b>.<br>Mortgage assets or sell extensions to raise funds \u2014 or declare bankruptcy.`,
+    buttons:[
+      {label:"Manage portfolio", fn:()=>openManage(()=>charge(p, amount, recipient, reason, onPaid, autoEnd))},
+      {label:"Declare bankruptcy", cls:"danger", fn:()=>doBankrupt(p, recipient)}
+    ]
+  });
+}
+
+function confirmBankrupt(){
+  const p = cur();
+  if (p.bankrupt) return;
+  showModal({
+    kind:"manage",
+    title:"Declare bankruptcy?",
+    html:`${p.name}, this retires you from the game. Your assets return to the unclaimed pool.`,
+    buttons:[
+      {label:"Yes, I'm done", cls:"danger", fn:()=>doBankrupt(p, null)},
+      {label:"Keep playing", cls:"quiet"}
+    ]
+  });
+}
+
+function doBankrupt(p, creditor){
+  p.bankrupt = true;
+  log(`${p.name} declares bankruptcy${creditor?` \u2014 assets seized by ${creditor.name}`:""}. They've switched to a free trial account.`, "bad");
+  BOARD.forEach(t=>{
+    if (t.owner === state.players.indexOf(p)){
+      if (creditor){
+        t.owner = state.players.indexOf(creditor);
+        t.houses = 0;
+      } else {
+        t.owner = null; t.mortgaged = false; t.houses = 0;
+      }
+    }
+  });
+  if (creditor){ creditor.cash += Math.max(0, p.cash); p.getOut && (creditor.getOut += p.getOut); }
+  p.cash = 0; p.getOut = 0;
+  closeModal();
+  if (checkWin()) return;
+  if (cur()===p){ state.phase="end"; render(); endTurn(); }
+  else render();
+}
+
+function checkWin(){
+  const alive = state.players.filter(p=>!p.bankrupt);
+  if (alive.length === 1){
+    const w = alive[0];
+    state.phase = "over";
+    render();
+    $("#rollBtn").disabled = true; $("#endBtn").disabled = true;
+    showModal({
+      kind:"win",
+      title:"\u{1F3C6} Total spatial domination",
+      html:`<b>${w.token} ${w.name}</b> owns the entire geospatial stack with ${fmt(w.cash)} in credits.<br><br>Every map, everywhere, now pays them rent. GIS analysts worldwide weep into their geodatabases.`,
+      buttons:[{label:"Play again", fn:()=>location.reload()}]
+    });
+    return true;
+  }
+  return false;
+}
+
+/* ================= RENT & OWNERSHIP HELPERS ================= */
+function countOwned(ownerIdx, type){
+  return BOARD.filter(t=>t.type===type && t.owner===ownerIdx).length;
+}
+function groupTiles(group){ return BOARD.filter(t=>t.type==="prop" && t.group===group); }
+function ownsGroup(ownerIdx, group){
+  return groupTiles(group).every(t=>t.owner===ownerIdx);
+}
+function computeRent(tile){
+  const oi = tile.owner;
+  if (tile.type==="rail"){
+    const n = countOwned(oi,"rail");
+    return 25 * Math.pow(2, n-1);
+  }
+  if (tile.type==="util"){
+    const n = countOwned(oi,"util");
+    return state.lastRoll * (n===2 ? 10 : 4);
+  }
+  if (tile.houses > 0) return tile.rents[tile.houses];
+  const base = tile.rents[0];
+  return ownsGroup(oi, tile.group) ? base*2 : base;
+}
+
+/* ================= TILE INFO / DEED ================= */
+function deedHTML(tile){
+  if (tile.type==="prop"){
+    const g = GROUPS[tile.group];
+    return `<div class="deed">
+      <div class="dhead" style="background:${g.css}">${tile.name}<div style="font-size:.7em;font-weight:700;opacity:.9">${g.label} suite</div></div>
+      <table>
+        <tr class="${tile.houses===0?"hl":""}"><td>Base rent</td><td>${fmt(tile.rents[0])} <span style="color:var(--ink-soft);font-weight:600">(\u00D72 with full suite)</span></td></tr>
+        ${[1,2,3,4].map(n=>`<tr class="${tile.houses===n?"hl":""}"><td>With ${n} extension${n>1?"s":""}</td><td>${fmt(tile.rents[n])}</td></tr>`).join("")}
+        <tr class="${tile.houses===5?"hl":""}"><td>Enterprise license</td><td>${fmt(tile.rents[5])}</td></tr>
+        <tr><td>Extension cost</td><td>${fmt(g.houseCost)} each</td></tr>
+        <tr><td>Mortgage value</td><td>${fmt(tile.price/2)}</td></tr>
+      </table>
+      <div class="flavor">${FLAVOR[tile.name]||""}</div>
+    </div>`;
+  }
+  if (tile.type==="rail"){
+    return `<div class="deed">
+      <div class="dhead" style="background:var(--rail)">${tile.name}<div style="font-size:.7em;font-weight:700;opacity:.9">Server infrastructure</div></div>
+      <table>
+        <tr><td>1 server owned</td><td>$25</td></tr><tr><td>2 servers</td><td>$50</td></tr>
+        <tr><td>3 servers</td><td>$100</td></tr><tr><td>4 servers</td><td>$200</td></tr>
+        <tr><td>Mortgage value</td><td>$100</td></tr>
+      </table>
+      <div class="flavor">It's always DNS. Except when it's the firewall.</div>
+    </div>`;
+  }
+  if (tile.type==="util"){
+    return `<div class="deed">
+      <div class="dhead" style="background:var(--util)">${tile.name}<div style="font-size:.7em;font-weight:700;opacity:.9">Services</div></div>
+      <table>
+        <tr><td>One service owned</td><td>4 \u00D7 dice roll</td></tr>
+        <tr><td>Both services</td><td>10 \u00D7 dice roll</td></tr>
+        <tr><td>Mortgage value</td><td>$75</td></tr>
+      </table>
+      <div class="flavor">${tile.name==="Esri Training" ? "Certification not included. Confidence sold separately." : "Your ticket has been escalated. To another ticket."}</div>
+    </div>`;
+  }
+  return "";
+}
+
+function showTileInfo(i){
+  const tile = BOARD[i];
+  if (tile.owner === undefined){
+    const blurbs = {
+      go:"Pass LAUNCH, collect $200 in credits. Deployment successful.",
+      jail:"Projection Error: where coordinates go to be confused. Just visiting? You're fine.",
+      parking:"The Esri User Conference. 18,000 people, one Jack Dangermond keynote, zero charges.",
+      gotojail:"License Expired. Contact your administrator. Go directly to Projection Error.",
+      tax:`Pay ${fmt(tile.amount||0)}. The invoice always finds you.`,
+      chance:"Geocode: draw a card and see where fate places your pin.",
+      chest:"Field Notes: draw a card from the crew's logbook.",
+    };
+    showModal({kind:"info", title:`${tile.icon||""} ${tile.name}`, html:blurbs[tile.type]||"", buttons:[{label:"Close", cls:"quiet"}], dismissible:true});
+    return;
+  }
+  const ownerTxt = tile.owner===null ? "Unclaimed" :
+    `Owned by ${state.players[tile.owner].token} ${state.players[tile.owner].name}${tile.mortgaged?" (mortgaged)":""}`;
+  showModal({
+    kind: "info",
+    title: tile.name,
+    html: deedHTML(tile) + `<p><b>${ownerTxt}</b></p>`,
+    buttons:[{label:"Close", cls:"quiet"}],
+    dismissible:true
+  });
+}
+
+/* ================= MANAGE PORTFOLIO ================= */
+function openManage(onClose){
+  const pIdx = state.turn, p = cur();
+  const mine = BOARD.map((t,i)=>({t,i})).filter(x=>x.t.owner===pIdx);
+  let html;
+  if (!mine.length){
+    html = `<p>${p.name} owns nothing yet. An empty geodatabase, full of potential.</p>`;
+  } else {
+    html = mine.map(({t,i})=>{
+      const isProp = t.type==="prop";
+      const g = isProp ? GROUPS[t.group] : null;
+      const swatch = isProp ? g.css : (t.type==="rail"?"var(--rail)":"var(--util)");
+      const full = isProp && ownsGroup(pIdx, t.group);
+      const groupHasBuildings = isProp && groupTiles(t.group).some(x=>x.houses>0);
+      const groupMortgaged = isProp && groupTiles(t.group).some(x=>x.mortgaged);
+      const canBuild = isProp && full && !groupMortgaged && t.houses<5 &&
+        groupTiles(t.group).every(x=>t.houses<=x.houses || x===t) && p.cash>=g.houseCost;
+      const canSell = isProp && t.houses>0 && groupTiles(t.group).every(x=>t.houses>=x.houses);
+      const canMort = !t.mortgaged && t.houses===0 && !groupHasBuildings;
+      const unmortCost = Math.ceil(t.price*0.55);
+      const canUnmort = t.mortgaged && p.cash>=unmortCost;
+      const status = t.houses===5 ? "\u2605 Enterprise" : t.houses>0 ? `${t.houses} ext.` : (t.mortgaged?"Mortgaged":"");
+      return `<div class="mg-item ${t.mortgaged?"morted":""}">
+        <span class="swatch" style="background:${swatch}"></span>
+        <span class="mg-nm">${t.type==="prop"?t.short:t.name}<small>${status||"&nbsp;"}</small></span>
+        ${isProp&&full?`<button class="mbtn" data-act="build" data-i="${i}" ${canBuild?"":"disabled"}>+Ext ${fmt(g.houseCost)}</button>`:""}
+        ${isProp&&t.houses>0?`<button class="mbtn" data-act="sell" data-i="${i}" ${canSell?"":"disabled"}>Sell ${fmt(g.houseCost/2)}</button>`:""}
+        ${t.mortgaged
+          ? `<button class="mbtn" data-act="unmort" data-i="${i}" ${canUnmort?"":"disabled"}>Lift ${fmt(unmortCost)}</button>`
+          : `<button class="mbtn" data-act="mort" data-i="${i}" ${canMort?"":"disabled"}>Mort. +${fmt(t.price/2)}</button>`}
+      </div>`;
+    }).join("");
+  }
+  showModal({
+    kind:'manage',
+    title:`${p.token} ${p.name} \u2014 ${fmt(p.cash)}`,
+    html: `<p style="font-size:.78rem;color:var(--ink-soft);margin-bottom:8px">Extensions need the full suite, build evenly. Mortgaging pays half the price; lifting costs 110%.</p>${html}`,
+    buttons:[{label:"Done", cls:"quiet", fn:onClose||null}],
+    dismissible:!onClose
+  });
+  document.querySelectorAll(".mg-item .mbtn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const i = +btn.dataset.i, t = BOARD[i], act = btn.dataset.act;
+      const g = t.type==="prop" ? GROUPS[t.group] : null;
+      if (act==="build"){ p.cash -= g.houseCost; t.houses++; log(`${p.name} ${t.houses===5?"upgrades "+t.short+" to an Enterprise license!":"adds an extension to "+t.short+"."}`, "money"); }
+      if (act==="sell"){ p.cash += g.houseCost/2; t.houses--; log(`${p.name} sells an extension on ${t.short} for ${fmt(g.houseCost/2)}.`); }
+      if (act==="mort"){ p.cash += t.price/2; t.mortgaged = true; log(`${p.name} mortgages ${t.name} for ${fmt(t.price/2)}.`); }
+      if (act==="unmort"){ p.cash -= Math.ceil(t.price*0.55); t.mortgaged = false; log(`${p.name} lifts the mortgage on ${t.name}.`); }
+      render();
+      openManage(onClose);
+    });
+  });
+}
+
+
+/* ================= AI OPPONENTS ================= */
+let aiThinking = false;
+
+function aiWatch(){
+  if (!state || state.phase === "over") return;
+  const p = cur();
+  if (!p.isAI || p.bankrupt || aiThinking) return;
+
+  if ($("#overlay").classList.contains("show")){
+    if (modalHandled || ["info","manage","win","debt","buyfail","jail"].includes(modalKind)) return;
+    modalHandled = true;
+    aiThinking = true;
+    setTimeout(()=>{ aiThinking = false; aiDecideModal(p, modalKind); }, 750);
+    return;
+  }
+  if (state.phase === "roll"){
+    aiThinking = true;
+    setTimeout(()=>{ aiThinking = false; aiPreRoll(p); }, 800);
+  } else if (state.phase === "end"){
+    aiThinking = true;
+    setTimeout(()=>{ aiThinking = false; endTurn(); }, 800);
+  }
+}
+
+function aiClick(match){
+  const btns = [...document.querySelectorAll("#modal .mbtns .btn")];
+  const target = match ? btns.find(b=>b.textContent.includes(match)) : btns[0];
+  (target || btns[0]) && (target || btns[0]).click();
+}
+
+function aiDecideModal(p, kind){
+  if (!$("#overlay").classList.contains("show")) return;
+  switch(kind){
+    case "buy": {
+      const tile = BOARD[p.pos];
+      if (aiShouldBuy(p, tile)){
+        log(`\u{1F916} ${p.name} eyes ${tile.name} approvingly.`);
+        aiClick("Buy");
+      } else {
+        log(`\u{1F916} ${p.name} runs a cost-benefit analysis and passes.`);
+        aiClick("Pass");
+      }
+      break;
+    }
+    case "pay": case "card":
+      aiClick(); break;
+    default:
+      aiClick(); break;
+  }
+}
+
+function aiShouldBuy(p, tile){
+  if (p.cash < tile.price) return false;
+  const idx = state.players.indexOf(p);
+  if (tile.type === "prop"){
+    const others = groupTiles(tile.group).filter(t=>t!==tile);
+    if (others.every(t=>t.owner===idx)) return true;                    // completes the suite
+    if (others.some(t=>t.owner!==null && t.owner!==idx)) return p.cash >= tile.price + 60; // deny a rival
+  }
+  if (tile.type === "rail") return p.cash >= tile.price + 100;
+  return p.cash - tile.price >= 150;
+}
+
+function aiPreRoll(p){
+  if (state.phase !== "roll" || !p.isAI) return;
+  aiManage(p);
+  if (p.inJail){
+    if (p.getOut > 0){
+      p.getOut--; p.inJail = false; p.jailTurns = 0;
+      log(`\u{1F916} ${p.name} plays a Get-Out-of-Projection-Error card.`, "card");
+    } else if (p.cash >= 250){
+      p.cash -= 50; p.inJail = false; p.jailTurns = 0;
+      log(`\u{1F916} ${p.name} pays the $50 support fee. Ticket closed.`);
+    } else {
+      log(`\u{1F916} ${p.name} tries to roll doubles out of Projection Error.`);
+    }
+    render();
+  }
+  onRoll();
+}
+
+function aiManage(p){
+  const idx = state.players.indexOf(p);
+  // lift mortgages on suite members first (restores rent), keep a cushion
+  let guard = 0;
+  while (guard++ < 12){
+    const m = BOARD.find(t => t.owner===idx && t.mortgaged &&
+      p.cash >= Math.ceil(t.price*0.55) + 450 &&
+      (t.type!=="prop" || ownsGroup(idx, t.group)));
+    if (!m) break;
+    p.cash -= Math.ceil(m.price*0.55); m.mortgaged = false;
+    log(`\u{1F916} ${p.name} lifts the mortgage on ${m.name}.`);
+  }
+  // build extensions evenly on owned suites
+  let builds = 0;
+  guard = 0;
+  while (builds < 3 && guard++ < 24){
+    const candidates = BOARD.filter(t =>
+      t.type==="prop" && t.owner===idx && t.houses < 5 &&
+      ownsGroup(idx, t.group) &&
+      !groupTiles(t.group).some(x=>x.mortgaged) &&
+      groupTiles(t.group).every(x => t.houses <= x.houses) &&
+      p.cash >= GROUPS[t.group].houseCost + 400
+    ).sort((a,b)=>b.price-a.price);
+    if (!candidates.length) break;
+    const t = candidates[0];
+    p.cash -= GROUPS[t.group].houseCost; t.houses++; builds++;
+    log(`\u{1F916} ${p.name} ${t.houses===5 ? "upgrades "+t.short+" to an Enterprise license!" : "adds an extension to "+t.short+"."}`, "money");
+  }
+  if (builds || guard) render();
+}
+
+function aiRaiseFunds(p, amount){
+  const idx = state.players.indexOf(p);
+  let guard = 0;
+  while (p.cash < amount && guard++ < 200){
+    // 1) sell extensions, tallest first, respecting even-sell
+    const withH = BOARD.filter(t=>t.owner===idx && t.houses>0).sort((a,b)=>b.houses-a.houses);
+    const sellable = withH.find(t=>groupTiles(t.group).every(x=>t.houses>=x.houses));
+    if (sellable){
+      sellable.houses--; p.cash += GROUPS[sellable.group].houseCost/2;
+      log(`\u{1F916} ${p.name} sells an extension on ${sellable.short} to cover debts.`, "bad");
+      continue;
+    }
+    // 2) mortgage: non-suite assets first, cheapest first
+    const morts = BOARD.filter(t => t.owner===idx && !t.mortgaged && (t.houses||0)===0 &&
+        (t.type!=="prop" || !groupTiles(t.group).some(x=>x.houses>0)))
+      .sort((a,b)=>{
+        const aSet = a.type==="prop" && ownsGroup(idx,a.group), bSet = b.type==="prop" && ownsGroup(idx,b.group);
+        return (aSet-bSet) || (a.price-b.price);
+      });
+    if (morts.length){
+      const t = morts[0]; t.mortgaged = true; p.cash += t.price/2;
+      log(`\u{1F916} ${p.name} mortgages ${t.name} for ${fmt(t.price/2)}.`, "bad");
+      continue;
+    }
+    break; // nothing left to liquidate
+  }
+  render();
+}
+
+</script>
+</body>
+</html>
