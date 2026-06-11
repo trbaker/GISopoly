@@ -1,4 +1,4 @@
-##GISopoly<br>
+<h2>GISopoly</h2>
 Link to game: https://trbaker.github.io/GISopoly/
 <br><br>
 This app was built by Claude.ai using Fable 5 - June 11 2026
